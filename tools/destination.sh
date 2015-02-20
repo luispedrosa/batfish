@@ -101,13 +101,13 @@ batfish_analyze_destination_consistency_machine() {
       batfish_nuke_reset_logicblox || return 1
       
       # Compute the fixed point of the control plane with failed interface
-      BATFISH_COMMON_ARGS="-flowsink $ORIG_FLOW_SINKS" batfish_compile_blacklist_node $WORKSPACE $TEST_RIG $DUMP_DIR $INDEP_SERIAL_DIR $NODE || return 1
+      batfish_compile_blacklist_node $WORKSPACE $TEST_RIG $DUMP_DIR $INDEP_SERIAL_DIR $NODE $ORIG_FLOW_SINKS || return 1
 
       # Query data plane predicates
       batfish_query_data_plane $WORKSPACE $DP_DIR || return 1
 
       # Extract z3 reachability relations
-      BATFISH_COMMON_ARGS="-blnode $NODE" batfish_generate_z3_reachability $DP_DIR $INDEP_SERIAL_DIR $REACH_PATH $NODE_SET_PATH || return 1
+      BATFISH_COMMON_ARGS="$BATFISH_COMMON_ARGS -blnode $NODE" batfish_generate_z3_reachability $DP_DIR $INDEP_SERIAL_DIR $REACH_PATH $NODE_SET_PATH || return 1
    
       # Find destination-consistency reachable packet constraints for node for no-failure scenario
       batfish_find_destination_consistency_node_accept_packet_constraints $ORIG_REACH_PATH $QUERY_PATH $DI_QUERY_BASE_PATH $NODE_SET_PATH $NODE || return 1
@@ -144,7 +144,7 @@ batfish_find_destination_consistency_accept_packet_constraints() {
    mkdir -p $QUERY_PATH
    cd $QUERY_PATH
    batfish -reach -reachpath $DI_QUERY_PRED_PATH -nodes $NODE_SET_PATH -blnode $BLACKLISTED_NODE || return 1
-   cat $NODE_SET_TEXT_PATH | parallel --halt 2 batfish_find_destination_consistency_accept_packet_constraints_helper {} $REACH_PATH $DI_QUERY_PRED_PATH $BLACKLISTED_NODE
+   cat $NODE_SET_TEXT_PATH | $BATFISH_PARALLEL batfish_find_destination_consistency_accept_packet_constraints_helper {} $REACH_PATH $DI_QUERY_PRED_PATH $BLACKLISTED_NODE
    if [ "${PIPESTATUS[0]}" -ne 0 -o "${PIPESTATUS[1]}" -ne 0 ]; then
       return 1
    fi
@@ -191,7 +191,7 @@ batfish_find_destination_consistency_node_accept_packet_constraints() {
    mkdir -p $QUERY_PATH
    cd $QUERY_PATH
    batfish -reach -reachpath $DI_QUERY_PRED_PATH -nodes $NODE_SET_PATH -acceptnode $BLACKLIST_NODE || return 1
-   cat $NODE_SET_TEXT_PATH | parallel --halt 2 batfish_find_destination_consistency_node_accept_packet_constraints_helper {} $REACH_PATH $DI_QUERY_PRED_PATH $BLACKLIST_NODE
+   cat $NODE_SET_TEXT_PATH | $BATFISH_PARALLEL batfish_find_destination_consistency_node_accept_packet_constraints_helper {} $REACH_PATH $DI_QUERY_PRED_PATH $BLACKLIST_NODE
    if [ "${PIPESTATUS[0]}" -ne 0 -o "${PIPESTATUS[1]}" -ne 0 ]; then
       return 1
    fi
@@ -234,7 +234,7 @@ batfish_generate_destination_consistency_concretizer_queries() {
    local NODE_SET_TEXT_PATH=${NODE_SET_PATH}.txt
    local OLD_PWD=$PWD
    cd $QUERY_PATH
-   cat $NODE_SET_TEXT_PATH | parallel --halt 2 batfish_generate_destination_consistency_concretizer_queries_helper {} $DI_QUERY_BASE_PATH $BLACKLISTED_NODE \;
+   cat $NODE_SET_TEXT_PATH | $BATFISH_PARALLEL batfish_generate_destination_consistency_concretizer_queries_helper {} $DI_QUERY_BASE_PATH $BLACKLISTED_NODE \;
    if [ "${PIPESTATUS[0]}" -ne 0 -o "${PIPESTATUS[1]}" -ne 0 ]; then
       return 1
    fi
@@ -259,7 +259,7 @@ batfish_generate_destination_consistency_concretizer_queries_helper() {
    fi
    batfish -conc -concin $ACCEPT_QUERY_OUT $NODE_ACCEPT_QUERY_OUT -concout $DI_CONCRETIZER_QUERY_BASE_PATH -concunique || return 1
    find $PWD -regextype posix-extended -regex "${DI_CONCRETIZER_QUERY_BASE_PATH}-[0-9]+.smt2" | \
-      parallel --halt 2 -j1 batfish_generate_concretizer_query_output {} $NODE \;
+      $BATFISH_NESTED_PARALLEL batfish_generate_concretizer_query_output {} $NODE \;
    if [ "${PIPESTATUS[0]}" -ne 0 -o "${PIPESTATUS[1]}" -ne 0 ]; then
       return 1
    fi

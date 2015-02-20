@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 
+which z3 > /dev/null || return
+which parallel > /dev/null || return
+
 export BATFISH_ROOT="$BATFISH_TOOLS_PATH/.."
 export BATFISH_PATH="$BATFISH_ROOT/projects/batfish"
 export BATFISH_TEST_RIG_PATH="$BATFISH_ROOT/test_rigs"
 export BATFISH="$BATFISH_PATH/batfish"
-export BATFISH_Z3="$(which z3)"
+export BATFISH_Z3=z3
 export BATFISH_Z3_DATALOG="$BATFISH_Z3 fixedpoint.engine=datalog fixedpoint.datalog.default_relation=doc fixedpoint.print.answer=true"
+export BATFISH_PARALLEL='parallel --tag -v --eta --halt 2'
+export BATFISH_NESTED_PARALLEL='parallel --tag -v --halt 2 -j1'
 
 batfish() {
    # if cygwin, shift and replace each parameter
@@ -141,6 +146,8 @@ batfish_generate_concretizer_query_output() {
       if [ "$SECOND_OUTPUT_LINE" = "unsat" ]; then
          echo "unsat" > $OUTPUT_FILE
          else if [ ! "$SECOND_OUTPUT_LINE" = "sat" ]; then
+            echo FAILED: z3 output follows
+            tail -n+2 $OUTPUT_FILE
             return 1
          fi
       fi
@@ -182,11 +189,11 @@ batfish_get_concrete_failure_packets() {
       return 1
    fi
    cd $FAILURE_QUERY_PATH
-   cat $NODES | parallel --halt 2 batfish_get_concrete_failure_packets_decreased {} $FAILURE_REACH_QUERY_NAME \;
+   cat $NODES | $BATFISH_PARALLEL batfish_get_concrete_failure_packets_decreased {} $FAILURE_REACH_QUERY_NAME \;
    if [ "${PIPESTATUS[0]}" -ne 0 -o "${PIPESTATUS[1]}" -ne 0 ]; then
       return 1
    fi
-   cat $FAILURE_NODES | parallel --halt 2 batfish_get_concrete_failure_packets_increased {} $FAILURE_REACH_QUERY_NAME \;
+   cat $FAILURE_NODES | $BATFISH_PARALLEL batfish_get_concrete_failure_packets_increased {} $FAILURE_REACH_QUERY_NAME \;
    if [ "${PIPESTATUS[0]}" -ne 0 -o "${PIPESTATUS[1]}" -ne 0 ]; then
       return 1
    fi
@@ -211,7 +218,17 @@ batfish_query_bgp() {
    batfish_expect_args 2 $# || return 1
    local BGP=$1
    local WORKSPACE=$2
-   batfish -log output -workspace $WORKSPACE -query -predicates BgpAdvertisement OriginalBgpAdvertisementRoute InstalledBgpAdvertisementRoute BgpNeighbors IbgpNeighbors BgpGeneratedRoute BgpNeighborGeneratedRoute AdvertisementPath AdvertisementPathSize &> $BGP
+   batfish -log output -workspace $WORKSPACE -query -predicates \
+      AdvertisementPath \
+      AdvertisementPathSize \
+      BgpAdvertisement \
+      BgpGeneratedRoute \
+      BgpNeighborGeneratedRoute \
+      BgpNeighbors \
+      IbgpNeighbors \
+      InstalledBgpAdvertisementRoute \
+      OriginalBgpAdvertisementRoute \
+      &> $BGP
    batfish_date
    echo ": END: Query bgp (informational only)"
 }
@@ -236,7 +253,51 @@ batfish_query_flows() {
    batfish_expect_args 2 $# || return 1
    local FLOW_RESULTS=$1
    local WORKSPACE=$2
-   batfish -log output -workspace $WORKSPACE -query -predicates Flow FlowAccepted FlowAllowedIn FlowAllowedOut FlowDeniedIn FlowDeniedOut FlowDropped FlowInconsistent FlowLoop FlowLost FlowMatchRoute FlowNeighborUnreachable FlowNoRoute FlowNullRouted FlowPathAcceptedEdge FlowPathDeniedInEdge FlowPathDeniedOutEdge FlowPathHistory FlowPathIntermediateEdge FlowPathNeighborUnreachableEdge FlowPathNoRouteEdge FlowPathNullRoutedEdge FlowPolicyDenied FlowReach FlowReachPolicyRoute FlowReachPostIn FlowReachPostInInterface FlowReachPostOutInterface FlowReachPreInInterface FlowReachPreOut FlowReachPreOutEdge FlowReachPreOutEdgeOrigin FlowReachPreOutEdgePolicyRoute FlowReachPreOutEdgeStandard FlowReachPreOutInterface FlowReachStep FlowRoleAccepted FlowRoleInconsistent FlowRoleTransitInconsistent FlowRoleTransitNode FlowSameHeaderRoleTransitNode FlowUnknown LanAdjacent > $FLOW_RESULTS || return 1
+   batfish -log output -workspace $WORKSPACE -query -predicates \
+      Flow \
+      FlowAccepted \
+      FlowAllowedIn \
+      FlowAllowedOut \
+      FlowDeniedIn \
+      FlowDeniedOut \
+      FlowDropped \
+      FlowLoop \
+      FlowLost \
+      FlowMatchRoute \
+      FlowMultipathInconsistent \
+      FlowNeighborUnreachable \
+      FlowNoRoute \
+      FlowNullRouted \
+      FlowPathAcceptedEdge \
+      FlowPathDeniedInEdge \
+      FlowPathDeniedOutEdge \
+      FlowPathHistory \
+      FlowPathIntermediateEdge \
+      FlowPathNeighborUnreachableEdge \
+      FlowPathNoRouteEdge \
+      FlowPathNullRoutedEdge \
+      FlowPolicyDenied \
+      FlowReach \
+      FlowReachPolicyRoute \
+      FlowReachPostIn \
+      FlowReachPostInInterface \
+      FlowReachPostOutInterface \
+      FlowReachPreInInterface \
+      FlowReachPreOut \
+      FlowReachPreOutEdge \
+      FlowReachPreOutEdgeOrigin \
+      FlowReachPreOutEdgePolicyRoute \
+      FlowReachPreOutEdgeStandard \
+      FlowReachPreOutInterface \
+      FlowReachStep \
+      FlowRoleAccepted \
+      FlowRoleInconsistent \
+      FlowRoleTransitInconsistent \
+      FlowRoleTransitNode \
+      FlowSameHeaderRoleTransitNode \
+      FlowUnknown \
+      LanAdjacent \
+      > $FLOW_RESULTS || return 1
    batfish_date
    echo ": END: Query flow results from LogicBlox"
 }
@@ -248,7 +309,19 @@ batfish_query_ospf() {
    batfish_expect_args 2 $# || return 1
    local OSPF=$1
    local WORKSPACE=$2
-   batfish -log output -workspace $WORKSPACE -query -predicates OspfRoute OspfExport OspfE1Route OspfE2Route OspfIARoute BestOspfE1Route BestOspfE2Route BestOspfRoute BestOspfIARoute SetOspfGeneratedRoute OspfGeneratedRoute &> $OSPF
+   batfish -log output -workspace $WORKSPACE -query -predicates \
+      BestOspfE1Route \
+      BestOspfE2Route \
+      BestOspfIARoute \
+      BestOspfRoute \
+      OspfE1Route \
+      OspfE2Route \
+      OspfExport \
+      OspfGeneratedRoute \
+      OspfIARoute \
+      OspfRoute \
+      SetOspfGeneratedRoute \
+      &> $OSPF
    batfish_date
    echo ": END: Query ospf (informational only)"
 }
@@ -260,7 +333,19 @@ batfish_query_policy() {
    batfish_expect_args 2 $# || return 1
    local POLICY=$1
    local WORKSPACE=$2
-   batfish -log output -workspace $WORKSPACE -query -predicates PolicyMapPermitRoute PolicyMapDenyRoute PolicyMapPermitAdvert PolicyMapDenyAdvert AsPathPermitAdvert AsPathDenyAdvert AsPathLineMatchEmpty AsPathLineMatchAs AsPathLineMatchAsAtBeginning AsPathLineMatchAsPair AsPathLineMatchAsPairAtBeginning &> $POLICY
+   batfish -log output -workspace $WORKSPACE -query -predicates \
+      AsPathDenyAdvert \
+      AsPathLineMatchAs \
+      AsPathLineMatchAsAtBeginning \
+      AsPathLineMatchAsPair \
+      AsPathLineMatchAsPairAtBeginning \
+      AsPathLineMatchEmpty \
+      AsPathPermitAdvert \
+      PolicyMapDenyAdvert \
+      PolicyMapDenyRoute \
+      PolicyMapPermitAdvert \
+      PolicyMapPermitRoute \
+      &> $POLICY
    batfish_date
    echo ": END: Query policy (informational only)"
 }
@@ -272,7 +357,10 @@ batfish_query_routes() {
    batfish_expect_args 2 $# || return 1
    local ROUTES=$1
    local WORKSPACE=$2
-   batfish -log output -workspace $WORKSPACE -query -predicates InstalledRoute ActiveGeneratedRoute &> $ROUTES
+   batfish -log output -workspace $WORKSPACE -query -predicates \
+      ActiveGeneratedRoute \
+      InstalledRoute \
+      &> $ROUTES
    batfish_date
    echo ": END: Query routes (informational only)"
 }
