@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-which z3 > /dev/null || return
-which parallel > /dev/null || return
+which z3 > /dev/null || return 1
+which parallel > /dev/null || return 1
 
 export BATFISH_ROOT="$BATFISH_TOOLS_PATH/.."
 export BATFISH_PATH="$BATFISH_ROOT/projects/batfish"
@@ -11,6 +11,15 @@ export BATFISH_Z3=z3
 export BATFISH_Z3_DATALOG="$BATFISH_Z3 fixedpoint.engine=datalog fixedpoint.datalog.default_relation=doc fixedpoint.print.answer=true"
 export BATFISH_PARALLEL='parallel --tag -v --eta --halt 2'
 export BATFISH_NESTED_PARALLEL='parallel --tag -v --halt 2 -j1'
+
+export BATFISH_CLIENT_PATH="$BATFISH_ROOT/projects/batfish-client"
+export BATFISH_CLIENT="$BATFISH_CLIENT_PATH/batfish-client"
+
+export COORDINATOR_PATH="$BATFISH_ROOT/projects/coordinator"
+export COORDINATOR="$COORDINATOR_PATH/coordinator"
+
+export COMMON_PATH="$BATFISH_ROOT/projects/batfish-common-protocol"
+export COMMON_JAR="$COMMON_PATH/out/batfish-common-protocol.jar"
 
 batfish() {
    # if cygwin, shift and replace each parameter
@@ -41,11 +50,15 @@ export -f batfish
 batfish_build() {
    local RESTORE_FILE='cygwin-symlink-restore-data'
    local OLD_PWD=$(pwd)
-   cd $BATFISH_PATH
+   cd $BATFISH_PATH/..
    if [ "Cygwin" = "$(uname -o)" -a ! -e "$RESTORE_FILE" ]; then
       echo "Replacing symlinks (Cygwin workaround)"
       ./cygwin-replace-symlinks
    fi
+   if [ ! -e "$COMMON_JAR" ]; then
+      common_build
+   fi
+   cd $BATFISH_PATH
    ant $@ || { cd $OLD_PWD ; return 1 ; } 
    cd $OLD_PWD
 }
@@ -373,7 +386,7 @@ export -f batfish_reload
 
 batfish_replace_symlinks() {
    OLDPWD=$PWD
-   cd $BATFISH_PATH
+   cd $BATFISH_PATH/..
    ./cygwin-replace-symlinks
    cd $OLDPWD
 }
@@ -399,7 +412,7 @@ batfish_serialize_vendor() {
    local TEST_RIG=$1
    local VENDOR_SERIAL_DIR=$2
    mkdir -p $VENDOR_SERIAL_DIR
-   batfish -testrig $TEST_RIG -sv -svpath $VENDOR_SERIAL_DIR -ee -throwparser -throwlexer || return 1
+   batfish -testrig $TEST_RIG -sv -svpath $VENDOR_SERIAL_DIR -ee -throwparser -throwlexer -unimplementedsuppress || return 1
    batfish_date
    echo ": END: Parse vendor configuration files and serialize vendor structures"
 }
@@ -421,7 +434,7 @@ export -f batfish_serialize_vendor_with_roles
 
 batfish_restore_symlinks() {
    OLDPWD=$PWD
-   cd $BATFISH_PATH
+   cd $BATFISH_PATH/..
    ./cygwin-restore-symlinks
    cd $OLDPWD
 }
@@ -473,3 +486,88 @@ else
    }
 fi
 export -f batfish_time
+
+coordinator() {
+   # if cygwin, shift and replace each parameter
+   if [ "Cygwin" = "$(uname -o)" ]; then
+      local NUMARGS=$#
+      for i in $(seq 1 $NUMARGS); do
+         local CURRENT_ARG=$1
+         local NEW_ARG="$(cygpath -w -- $CURRENT_ARG)"
+         set -- "$@" "$NEW_ARG"
+         shift
+      done
+   fi
+   if [ "$COORDINATOR_PRINT_CMDLINE" = "yes" ]; then
+      echo "$COORDINATOR $COORDINATOR_COMMON_ARGS $@"
+   fi
+   $COORDINATOR $COORDINATOR_COMMON_ARGS $@
+}
+export -f coordinator
+
+batfish-client() {
+   # if cygwin, shift and replace each parameter
+   if [ "Cygwin" = "$(uname -o)" ]; then
+      local NUMARGS=$#
+      for i in $(seq 1 $NUMARGS); do
+         local CURRENT_ARG=$1
+         local NEW_ARG="$(cygpath -w -- $CURRENT_ARG)"
+         set -- "$@" "$NEW_ARG"
+         shift
+      done
+   fi
+   if [ "$BATFISH_CLIENT_PRINT_CMDLINE" = "yes" ]; then
+      echo "$BATFISH_CLIENT $BATFISH_CLIENT_COMMON_ARGS $@"
+   fi
+   $BATFISH_CLIENT $BATFISH_CLIENT_COMMON_ARGS $@
+}
+export -f batfish-client
+
+client_build() {
+   local RESTORE_FILE='cygwin-symlink-restore-data'
+   local OLD_PWD=$(pwd)
+   cd $BATFISH_CLIENT_PATH/..
+   if [ "Cygwin" = "$(uname -o)" -a ! -e "$RESTORE_FILE" ]; then
+      echo "Replacing symlinks (Cygwin workaround)"
+      ./cygwin-replace-symlinks
+   fi
+   if [ ! -e "$COMMON_JAR" ]; then
+      common_build
+   fi
+   cd $BATFISH_CLIENT_PATH
+   ant $@ || { cd $OLD_PWD ; return 1 ; } 
+   cd $OLD_PWD
+}
+export -f client_build
+
+coordinator_build() {
+   local RESTORE_FILE='cygwin-symlink-restore-data'
+   local OLD_PWD=$(pwd)
+   cd $COORDINATOR_PATH/..
+   if [ "Cygwin" = "$(uname -o)" -a ! -e "$RESTORE_FILE" ]; then
+      echo "Replacing symlinks (Cygwin workaround)"
+      ./cygwin-replace-symlinks
+   fi
+   if [ ! -e "$COMMON_JAR" ]; then
+      common_build
+   fi
+   cd $COORDINATOR_PATH
+   ant $@ || { cd $OLD_PWD ; return 1 ; } 
+   cd $OLD_PWD
+}
+export -f coordinator_build
+
+common_build() {
+   local RESTORE_FILE='cygwin-symlink-restore-data'
+   local OLD_PWD=$(pwd)
+   cd $COMMON_PATH/..
+   if [ "Cygwin" = "$(uname -o)" -a ! -e "$RESTORE_FILE" ]; then
+      echo "Replacing symlinks (Cygwin workaround)"
+      ./cygwin-replace-symlinks
+   fi
+   cd $COMMON_PATH
+   ant $@ || { cd $OLD_PWD ; return 1 ; }
+   cd $OLD_PWD
+}
+export -f common_build
+
